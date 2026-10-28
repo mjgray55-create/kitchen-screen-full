@@ -164,6 +164,14 @@
   .rcard.bears h2 { color: var(--bears); } .rcard.hounds h2 { color: var(--hounds); }
   .rcard .source { font-style: italic; color: var(--ink-light); font-size: 1.02rem; margin-bottom: 8px; }
   .rcard .tools { display: flex; gap: 10px; margin: 14px 0 6px; flex-wrap: wrap; }
+  /* ½× · 1× · 2× */
+  .rcard .scale { display: inline-flex; border: 1px solid var(--rule); border-radius: 26px; overflow: hidden; background: var(--paper-card); }
+  .rcard .scale button { min-height: 52px; min-width: 58px; padding: 0 14px; font-size: 1rem; color: var(--ink-mid); }
+  .rcard .scale button + button { border-left: 1px solid var(--rule); }
+  .rcard .scale button.on { background: var(--accent); color: var(--on-accent); }
+  .rcard .scalenote { font-size: 0.92rem; font-style: italic; color: var(--accent); margin: 2px 0 6px; }
+  .rcard .scalenote:empty { display: none; }
+  .rcard .qty { color: var(--accent); font-weight: 600; }
   .rcard .subsection { font-size: 0.78rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); margin: 26px 0 10px; font-weight: 600; }
   .rcard ul, .rcard ol { list-style: none; }
   .rcard ul li {
@@ -578,7 +586,7 @@ var RAW_RECIPES = [];      // the recipe rows as the sheet has them, for the edi
 
 var D = null;            // everything the screen shows
 var R = { sections: [], recipes: [], byId: {}, byTitle: {} };
-var state = { page: 'menu', frzFilter: 'ALL', recipe: null, busy: false, lastLoad: 0 };
+var state = { page: 'menu', frzFilter: 'ALL', recipe: null, scale: 1, busy: false, lastLoad: 0 };
 
 function $(id) { return document.getElementById(id); }
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
@@ -1137,18 +1145,117 @@ function addTimerChips(root, label) {
   });
 }
 
+/* Half or double a recipe: changes the amounts in the ingredient lists only.
+   Left alone: temperatures, times, percentages, ratios, "8:00am" schedules, "per tin" amounts,
+   and package sizes like "1 (16 oz) can" (you get 2 cans, still 16 oz each). */
+var SCALES = [[0.5, '½×'], [1, '1×'], [2, '2×']];
+var VULGAR = { '½': 1 / 2, '¼': 1 / 4, '¾': 3 / 4, '⅓': 1 / 3, '⅔': 2 / 3, '⅛': 1 / 8, '⅜': 3 / 8, '⅝': 5 / 8, '⅞': 7 / 8, '⅙': 1 / 6, '⅚': 5 / 6 };
+var GLYPH = [[0, ''], [1 / 8, '⅛'], [1 / 6, '⅙'], [1 / 4, '¼'], [1 / 3, '⅓'], [3 / 8, '⅜'], [1 / 2, '½'], [5 / 8, '⅝'], [2 / 3, '⅔'], [3 / 4, '¾'], [5 / 6, '⅚'], [7 / 8, '⅞'], [1, '']];
+var QTY = '(?:\\d+\\s+\\d+/\\d+|\\d+\\s*[½¼¾⅓⅔⅛⅜⅝⅞⅙⅚]|\\d+/\\d+|\\d+(?:\\.\\d+)?|[½¼¾⅓⅔⅛⅜⅝⅞⅙⅚])';
+var QTY_RE = new RegExp('(' + QTY + ')(?:(\\s*[–-]\\s*)(' + QTY + '))?', 'g');
+// the thing being counted: "1 cup" → "2 cups"; "1 (16 oz) package" → "2 (16 oz) packages", the 16 oz staying as it is
+var MEASURE = /^(\s?)(g|kg|mg|ml|l|oz|lbs?|tsp|tbsp|teaspoons?|tablespoons?|cups?|quarts?|qts?|pints?|litres?|liters?)\b\.?/i;
+var COUNT_NOUN = /^(\s*(?:\([^)]*\)\s*)?(?:(?!(?:tsp|tbsp|teaspoons?|tablespoons?|oz|lbs?|g|kg|ml|l|litres?|liters?|pinch|dash|of)\b)[a-z-]+\s+){0,2}?)(cups?|cloves?|cans?|tins?|jars?|packets?|packages?|slices?|sprigs?|sticks?|stalks?|bags?|eggs?|yolks?|onions?|carrots?|lemons?|limes?|cubes?|sheets?|tortillas?|bottles?|breasts?)\b/i;
+
+function parseQ(s) {
+  s = s.replace(/\s+/g, ' ').trim(); var m;
+  if ((m = s.match(/^(\d+) (\d+)\/(\d+)$/))) return +m[1] + m[2] / m[3];
+  if ((m = s.match(/^(\d+)\/(\d+)$/))) return m[1] / m[2];
+  if ((m = s.match(/^(\d*) ?(\D)$/)) && VULGAR[m[2]]) return (m[1] ? +m[1] : 0) + VULGAR[m[2]];
+  return parseFloat(s);
+}
+function fmtQ(x, metric) {
+  if (metric) return String(x >= 10 ? Math.round(x) : Math.round(x * 10) / 10);   // 88g, 2.5g
+  var whole = Math.floor(x + 1e-9), frac = x - whole, best = null;
+  GLYPH.forEach(function (g) { if (Math.abs(frac - g[0]) < 0.03 && (!best || Math.abs(frac - g[0]) < Math.abs(frac - best[0]))) best = g; });
+  if (!best) return String(Math.round(x * 100) / 100);
+  var w = whole + (best[0] === 1 ? 1 : 0);
+  return best[1] ? (w ? w + best[1] : best[1]) : String(w);
+}
+function notAnAmount(q) {
+  var f = q.match(/^(\d+)\/(\d+)$/);
+  return /^0\d/.test(q) || (f && (+f[1] >= +f[2] || [2, 3, 4, 8].indexOf(+f[2]) < 0));    // "00" flour, "50/50"
+}
+function scaleText(t, f) {
+  var out = [], last = 0, m;
+  QTY_RE.lastIndex = 0;
+  while ((m = QTY_RE.exec(t))) {
+    var start = m.index, end = start + m[0].length;
+    var before = t.slice(0, start), rest = t.slice(end);
+    if (/[\d.\/]$/.test(before) || /[x×:]\s*$/i.test(before) ||                            // 2 x 400g, 1:1:1
+        /\b(?:day|step|stage|no\.?|mark)\s*$|#\s*$/i.test(before) ||                             // Day 10, gas mark 4
+        /\d\s*\(\s*~?$/.test(before) ||                                                          // the 16 oz in "1 (16 oz) can"
+        /^\s*(?:°|%|:|am\b|pm\b|inch|in\b|"|x\b|×|hours?|hrs?|minutes?|mins?|seconds?|secs?|days?)/i.test(rest) ||
+        /^\s*[a-z]+\s+per\b/i.test(rest) ||                                                     // 1 tsp per tin
+        notAnAmount(m[1].trim()) || (m[3] && notAnAmount(m[3].trim()))) continue;
+    var lo = parseQ(m[1]) * f, hi = m[3] ? parseQ(m[3]) * f : null;
+    if (isNaN(lo) || (m[3] && isNaN(hi))) continue;
+    var metric = /^\s*(?:g|kg|ml|l)\b/i.test(rest);
+    var txt = fmtQ(lo, metric) + (m[3] ? m[2] + fmtQ(hi, metric) : '');
+    // the unit goes with the number, so "210g" and "2½ tbsp" are coloured as one;
+    // "1 cup" doubled is "2 cups"; "2 cloves" halved is "1 clove"
+    var u = MEASURE.exec(rest), n = u ? null : COUNT_NOUN.exec(rest);
+    if (u) {
+      var unit = u[2];
+      if (/^(cup|quart|pint|teaspoon|tablespoon|litre|liter)s?$/i.test(unit)) unit = (hi || lo) > 1 ? unit.replace(/s?$/i, 's') : unit.replace(/s$/i, '');
+      txt += u[1] + unit; end += u[0].length;
+    } else if (n) {
+      var amount = hi || lo, word = n[2];
+      word = amount > 1 ? (/s$/i.test(word) ? word : word + 's') : word.replace(/s$/i, '');
+      txt += n[1] + word; end += n[0].length;
+    }
+    out.push({ t: t.slice(last, start) }, { q: txt }); last = end;
+    QTY_RE.lastIndex = end;
+  }
+  if (!out.length) return null;
+  out.push({ t: t.slice(last) });
+  return out;
+}
+function applyScale(v) {
+  var f = state.scale || 1;
+  v.querySelectorAll('[data-scale]').forEach(function (b) { b.classList.toggle('on', +b.dataset.scale === f); });
+  $('scaleNote').textContent = f === 1 ? '' : (f > 1 ? 'Doubled' : 'Halved') + ' — ingredient amounts only. Times, temperatures and pan sizes stay as written.';
+  // "serves 8" / "makes 12" under the title
+  v.querySelectorAll('.source').forEach(function (p) {
+    if (p.dataset.orig == null) p.dataset.orig = p.innerHTML; else p.innerHTML = p.dataset.orig;
+    if (f === 1) return;
+    p.innerHTML = p.innerHTML.replace(/\b(serves|makes|yields?)(\s+(?:about\s+)?)(\d+)(?:(\s*[–-]\s*)(\d+))?/gi, function (all, w, sp, a, dash, b) {
+      return w + sp + '<span class="qty">' + fmtQ(a * f) + (b ? dash + fmtQ(b * f) : '') + '</span>';
+    });
+  });
+  v.querySelectorAll('.rbody ul li').forEach(function (li) {
+    if (li.dataset.orig == null) li.dataset.orig = li.innerHTML; else li.innerHTML = li.dataset.orig;
+    if (f === 1 || /^\s*\d{1,2}:\d\d/.test(li.textContent)) return;     // timetable lines, not amounts
+    var walker = document.createTreeWalker(li, NodeFilter.SHOW_TEXT, null), nodes = [];
+    while (walker.nextNode()) if (!walker.currentNode.parentNode.closest('.tchip')) nodes.push(walker.currentNode);
+    nodes.forEach(function (node) {
+      var parts = scaleText(node.nodeValue, f); if (!parts) return;
+      var frag = document.createDocumentFragment();
+      parts.forEach(function (p) {
+        if (p.t != null) frag.appendChild(document.createTextNode(p.t));
+        else { var s = document.createElement('span'); s.className = 'qty'; s.textContent = p.q; frag.appendChild(s); }
+      });
+      node.parentNode.replaceChild(frag, node);
+    });
+  });
+}
+
 // quiet: refresh the open recipe in place without switching to the Recipes page
 function showRecipe(id, keepScroll, quiet) {
   var r = R.byId[id]; if (!r) return;
+  if (state.recipe !== id) state.scale = 1;     // a different recipe starts at its normal size
   state.recipe = id;
   var v = $('recView'); var top = v.scrollTop;
   v.innerHTML = '<article class="rcard ' + r.kind + '"><div class="sec">' + esc(r.section) + '</div><h2>' + esc(r.shortTitle) + '</h2>' +
     '<div class="tools"><button class="btn" data-reset>Start fresh</button>' +
+    '<div class="scale">' + SCALES.map(function (s) { return '<button data-scale="' + s[0] + '">' + s[1] + '</button>'; }).join('') + '</div>' +
     (feat('shopping') ? '<button class="btn" data-shopadd>Add ingredients to shopping…</button>' : '') +
     (r.editable ? '<button class="btn quiet" data-redit>Edit</button>' : '') + '<button class="btn quiet warn" data-rdel>Delete</button></div>' +
+    '<p class="scalenote" id="scaleNote"></p>' +
     '<div class="rbody selectable">' + r.html + '</div></article>';
   var body = v.querySelector('.rbody');
   addTimerChips(body, r.shortTitle);
+  applyScale(v);
   // first .source sits under the title
   var src = body.querySelector('.source'); if (src) v.querySelector('.tools').before(src);
   v.scrollTop = keepScroll ? top : 0;
@@ -1166,6 +1273,8 @@ function recipeTap(e) {
     $('recView').scrollTop = 0; return;
   }
   if (e.target.closest('[data-shopadd]')) { shopFromRecipe(); return; }
+  var sc = e.target.closest('[data-scale]');
+  if (sc) { state.scale = +sc.dataset.scale; applyScale($('recView')); return; }
   if (e.target.closest('[data-redit]')) { recipeForm(R.byId[state.recipe]); return; }
   if (e.target.closest('[data-rdel]')) { recipeDelete(R.byId[state.recipe]); return; }
   var li = e.target.closest('.rcard li'); if (!li) return;
