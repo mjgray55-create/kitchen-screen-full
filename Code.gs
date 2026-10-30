@@ -294,6 +294,29 @@ function setMenu(dayIndex, slot, value) {
   });
 }
 
+/** Kick the can: a planned lunch or dinner moves to another day.
+    mode: 'move' (other day is empty), 'swap' the two days, 'join' (add alongside),
+    or 'replace' what's there (e.g. last week's meal on a day that has gone). */
+function kickMenu(fromDay, toDay, slot, expected, mode) {
+  var col = { lunch: 2, dinner: 3 }[slot];
+  if (!col || fromDay < 0 || fromDay > 6 || toDay < 0 || toDay > 6 || fromDay === toDay) throw new Error('Unknown menu slot.');
+  return withLock_(function () {
+    var menu = sheet_('Menu');
+    var a = menu.getRange(2 + fromDay, col), b = menu.getRange(2 + toDay, col);
+    var av = String(a.getDisplayValue()).trim(), bv = String(b.getDisplayValue()).trim();
+    if (av !== String(expected || '').trim()) throw new Error('That meal changed on the sheet — refreshing.');
+    if (!av) return getAll();
+    if (mode === 'swap') { a.setValue(bv); b.setValue(av); }
+    else if (mode === 'join') { b.setValue(bv ? bv + ' + ' + av : av); a.setValue(''); }
+    else if (mode === 'replace') { b.setValue(av); a.setValue(''); }
+    else {
+      if (bv) throw new Error('Something is already planned that day — refreshing.');
+      b.setValue(av); a.setValue('');
+    }
+    return getAll();
+  });
+}
+
 function clearMenu() {
   return withLock_(function () {
     sheet_('Menu').getRange(2, 2, 7, 4).clearContent();

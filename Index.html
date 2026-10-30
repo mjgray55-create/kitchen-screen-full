@@ -88,10 +88,9 @@
   .empty { color: var(--ink-light); font-style: italic; padding: 30px 0; text-align: center; }
 
   /* ---------- Menu ---------- */
-  .week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 12px; }
   .day {
     border-radius: 18px; background: var(--paper-card); border: 1px solid var(--rule);
-    display: flex; flex-direction: column; overflow: hidden; min-height: 470px;
+    display: flex; flex-direction: column; overflow: hidden;
   }
   .day .dh { padding: 14px 12px 12px; text-align: center; border-bottom: 1px solid var(--rule); }
   .day .dh .n { font-family: var(--display); font-size: 1.25rem; color: var(--ink-mid); }
@@ -122,6 +121,7 @@
   }
   .locard .q { flex: 1; min-width: 260px; font-size: 1.1rem; }
   .locard .q small { display: block; color: var(--ink-light); font-style: italic; font-size: 0.88rem; }
+  .locard .loacts { display: flex; gap: 12px; flex-wrap: wrap; }
   .locard .lorow { display: flex; align-items: center; gap: 10px; margin-top: 8px; font-size: 1rem; }
   .locard .lorow .stepper button { width: 44px; height: 44px; font-size: 1.3rem; }
   .locard .lorow .stepper .v { font-size: 1.6rem; min-width: 44px; }
@@ -140,6 +140,10 @@
   .sel { display: flex; flex-wrap: wrap; gap: 8px; min-height: 48px; padding: 6px 0 4px; }
   .sel .chip { min-height: 42px; padding: 0 14px; display: inline-flex; align-items: center; gap: 8px; }
   .sel .none { color: var(--ink-faint); font-style: italic; align-self: center; }
+  .kickdays { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; margin-top: 10px; }
+  .kickdays .pick { border: 1px solid var(--rule); }
+  .kickdays .when { font-size: 0.8rem; color: var(--ink-light); font-style: italic; }
+  @media (orientation: portrait) { .kickdays { grid-template-columns: 1fr; } }
   .pick .cnt { float: right; font-family: var(--display); color: var(--accent); font-size: 1.1rem; }
   .day .notes { padding: 8px 12px 12px; font-size: 0.85rem; font-style: italic; color: var(--ink-light); min-height: 44px; text-align: left; width: 100%; }
   .day .notes.none { color: var(--ink-faint); }
@@ -430,6 +434,32 @@
   .lrow select.field { flex: 0 0 auto; width: auto; min-width: 120px; }
   .lrow .field.dnum { flex: 0 0 84px; }
 
+  /* the week is a deck of cards: the front day big and centred, the others tucked behind it either side.
+     All the cards sit stacked in the middle; deckDraw() places each one from where the finger has the deck. */
+  .week {
+    position: relative; margin: 0 -34px; overflow: hidden; overflow-x: clip; overflow-y: visible; min-height: calc(max(440px, 56vh) + 28px);
+    touch-action: pan-y; user-select: none; -webkit-user-select: none;
+  }
+  .day {
+    position: absolute; top: 10px; left: 50%; width: 34%; margin-left: -17%; min-height: max(440px, 56vh);
+    will-change: transform; backface-visibility: hidden; border-radius: 22px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.10); transition: box-shadow 0.3s ease;
+  }
+  .day.front { box-shadow: 0 16px 40px rgba(0,0,0,0.18); }
+  .day.l .dh { text-align: left; } .day.r .dh { text-align: right; }   /* side cards show their name on the edge that peeks out */
+  .day.today.front { box-shadow: 0 0 0 3px var(--accent-light), 0 16px 40px rgba(0,0,0,0.18); }
+  .day .dh .n { font-size: 1.6rem; }
+  .day .dh .s { font-size: 0.85rem; }
+  .slot { padding: 16px 20px 14px; gap: 8px; }
+  .slot .lbl { font-size: 0.8rem; }
+  .slot .meal { font-size: 1.45rem; }
+  .slot .meal.none { font-size: 1.1rem; }
+  .cook { font-size: 0.85rem; padding: 3px 11px; }
+  .src { font-size: 0.78rem; }
+  .eat { font-size: 0.92rem; padding: 5px 14px; }
+  .slot .rl { font-size: 0.95rem; }
+  .day .notes { padding: 10px 20px 16px; font-size: 1rem; }
+
   /* ---------- portrait ---------- */
   @media (orientation: portrait) {
     .app { flex-direction: column-reverse; }
@@ -438,8 +468,8 @@
     .tab { flex: 1; margin: 0 3px; padding: 8px 2px; }
     .rail .spacer { display: none; }
     .sync { display: none; }
-    .week { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .day { min-height: 0; }
+    .week { min-height: calc(max(560px, 56vh) + 28px); }
+    .day { width: 58%; margin-left: -29%; min-height: max(560px, 56vh); }
     .rec-layout, #page-recipes.on { grid-template-columns: 1fr; }
     .rec-list { display: none; }
     .rec-list.show { display: block; border-right: none; }
@@ -586,7 +616,7 @@ var RAW_RECIPES = [];      // the recipe rows as the sheet has them, for the edi
 
 var D = null;            // everything the screen shows
 var R = { sections: [], recipes: [], byId: {}, byTitle: {} };
-var state = { page: 'menu', frzFilter: 'ALL', recipe: null, scale: 1, busy: false, lastLoad: 0 };
+var state = { page: 'menu', frzFilter: 'ALL', recipe: null, scale: 1, busy: false, lastLoad: 0, carDay: null, lastTouch: 0 };
 
 function $(id) { return document.getElementById(id); }
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
@@ -658,6 +688,7 @@ function go(page) {
   if (page === 'recipes' && !state.recipe) $('recList').classList.add('show');
   if (page === 'settings' && D && !document.body.classList.contains('welcome')) renderSettings();
   if (page === 'settings' || page === 'welcome') $('page-' + page).scrollTop = 0;
+  if (page === 'menu') recenter();
 }
 
 /* =========================================================
@@ -738,9 +769,108 @@ function renderMenu() {
   }).join('');
   $('week').innerHTML = html;
   $('week').classList.toggle('has-occ', !!$('week').querySelector('.dh .occ'));
+  centerDay(state.carDay == null ? ti : state.carDay, false);
   renderOccasions();
   renderLeftoverCard();
 }
+
+/* ---------- the week as a carousel ---------- */
+var PORTRAIT = window.matchMedia('(orientation: portrait)');   // turning the tablet re-centres the front day
+// How far from the middle a card sits, by its distance from the front (in cards), as a share of a card's width:
+// the next card peeks out 38% of a card, the one after another 22%, then 12%.
+var DECK_PEEK = [0, 0.38, 0.60, 0.72];
+function deckPos(a) {
+  var k = Math.min(Math.floor(a), 2), f = a - k;
+  return DECK_PEEK[k] + (DECK_PEEK[k + 1] - DECK_PEEK[k]) * f;
+}
+// The deck has one number: which day is in front, as a fraction while moving (4.3 = Friday, a little towards Saturday).
+var deckAt = null, deckAnim = 0;
+function deckDraw() {
+  var w = $('week'), cards = w.querySelectorAll('.day'); if (!cards.length || deckAt == null) return;
+  var cw = cards[0].offsetWidth;
+  cards.forEach(function (el, j) {
+    var d = j - deckAt, a = Math.min(Math.abs(d), 3);
+    var x = deckPos(a) * cw * (d < 0 ? -1 : 1);
+    el.style.transform = 'translate3d(' + x.toFixed(2) + 'px,0,0) scale(' + (1 - 0.09 * a).toFixed(4) + ')';
+    el.style.zIndex = 100 - Math.round(Math.abs(d) * 10);   // nearer the front sits on top
+    el.style.opacity = Math.abs(d) > 2.6 ? Math.max(0, 1 - (Math.abs(d) - 2.6) * 2.5).toFixed(2) : '';
+  });
+  var best = Math.max(0, Math.min(cards.length - 1, Math.round(deckAt)));
+  if (best !== state.carDay || !w.querySelector('.day.front')) {
+    state.carDay = best;
+    cards.forEach(function (el, j) { el.classList.toggle('front', j === best); el.classList.toggle('l', j < best); el.classList.toggle('r', j > best); });
+  }
+}
+// All cards as tall as the tallest, and the deck as tall as them.
+function deckSize() {
+  var w = $('week'), cards = w.querySelectorAll('.day'), h = 0;
+  cards.forEach(function (el) { el.style.height = ''; h = Math.max(h, el.offsetHeight); });
+  cards.forEach(function (el) { el.style.height = h + 'px'; });
+  w.style.height = (h + 28) + 'px';
+}
+function deckGlide(to, ms) {
+  cancelAnimationFrame(deckAnim); deckAnim = 0;
+  var from = deckAt, t0 = performance.now();
+  if (from == null || Math.abs(to - from) < 0.001) { deckAt = to; deckDraw(); return; }
+  (function step(now) {
+    var t = Math.min(1, (now - t0) / ms), e = 1 - Math.pow(1 - t, 3);   // ease out
+    deckAt = from + (to - from) * e; deckDraw();
+    deckAnim = t < 1 ? requestAnimationFrame(step) : 0;
+  })(t0);
+}
+function centerDay(i, smooth) {
+  if (!$('week').querySelector('.day')) return;
+  if (smooth) deckGlide(i, 220 + 90 * Math.min(4, Math.abs(i - (deckAt == null ? i : deckAt))));
+  else { cancelAnimationFrame(deckAnim); deckAnim = 0; deckAt = i; deckSize(); deckDraw(); }
+}
+// The finger drives the deck directly: a card's width of drag moves about two days.
+// On letting go it carries on in the direction of travel and stops on the day it was heading for.
+var drag = null, dragged = false;
+$('week').addEventListener('pointerdown', function (e) {
+  if (deckAt == null) return;
+  cancelAnimationFrame(deckAnim); deckAnim = 0;
+  drag = { x: e.clientX, y: e.clientY, at: deckAt, on: false, pts: [[e.timeStamp, e.clientX]] };
+  dragged = false;
+});
+window.addEventListener('pointermove', function (e) {
+  if (!drag) return;
+  var dx = e.clientX - drag.x;
+  if (!drag.on) {
+    if (Math.abs(e.clientY - drag.y) > 12 && Math.abs(e.clientY - drag.y) > Math.abs(dx)) { deckLetGo(false); return; }
+    if (Math.abs(dx) < 8) return;
+    drag.on = dragged = true; drag.x = e.clientX; dx = 0;
+  }
+  var cw = $('week').querySelector('.day').offsetWidth;
+  var at = drag.at - dx / (cw * 0.5);
+  if (at < 0) at = at / 3; else if (at > 6) at = 6 + (at - 6) / 3;   // stretchy at the ends
+  deckAt = at;
+  drag.pts.push([e.timeStamp, e.clientX]); if (drag.pts.length > 6) drag.pts.shift();
+  if (!deckAnim) deckAnim = requestAnimationFrame(function () { deckAnim = 0; deckDraw(); });
+});
+function deckLetGo(fling) {
+  var d = drag; drag = null; if (!d) return;
+  if (!d.on) return;
+  var v = 0, p = d.pts, cw = $('week').querySelector('.day').offsetWidth;
+  if (fling && p.length > 1) {
+    var a = p[0], b = p[p.length - 1];
+    if (b[0] - a[0] > 0 && performance.now() - b[0] < 120) v = -(b[1] - a[1]) / (b[0] - a[0]) / (cw * 0.5) * 1000;   // days per second
+  }
+  var to = Math.round(deckAt + v * 0.18);
+  if (Math.abs(v) > 0.8 && to === Math.round(d.at)) to += v > 0 ? 1 : -1;   // a flick always turns at least one card
+  deckGlide(Math.max(0, Math.min(6, to)), 300);
+}
+window.addEventListener('pointerup', function () { deckLetGo(true); });
+window.addEventListener('pointercancel', function () { deckLetGo(false); });
+// a drag isn't a tap: don't open the day the finger happened to start on
+document.addEventListener('click', function (e) {
+  if (dragged && e.target.closest('#week')) { e.stopPropagation(); e.preventDefault(); }
+  dragged = false;
+}, true);
+window.addEventListener('resize', function () { if (deckAt != null) { deckSize(); deckDraw(); } });
+function recenter() { if (D) centerDay(state.carDay == null ? todayIdx() : state.carDay, false); }
+if (PORTRAIT.addEventListener) PORTRAIT.addEventListener('change', recenter); else PORTRAIT.addListener(recenter);
+// left alone for a few minutes, the carousel drifts back to today
+document.addEventListener('pointerdown', function () { state.lastTouch = Date.now(); }, true);
 
 /* ---------- picking what's for lunch / dinner (several things allowed) ---------- */
 function freezerSnacks() {
@@ -781,7 +911,7 @@ function pickMeal(dayIdx, slot) {
     '<div class="picklist" id="mealPick">' + (groups || '<p class="empty">Nothing in the fridge or freezer snacks yet — type what\'s on below.</p>') + '</div>' +
     '<div class="lab">Something else</div>' +
     '<div class="row"><input class="field" id="mealOther" placeholder="e.g. Sandwiches, eating out"><button class="btn" id="addOther" style="flex:0 0 auto">Add</button></div>' +
-    '<div class="acts"><button class="btn quiet warn" data-clear>Clear</button><button class="btn" data-x>Cancel</button><button class="btn primary" data-y>Save</button></div>', function (s) {
+    '<div class="acts"><button class="btn quiet warn" data-clear>Clear</button>' + (String(d[slot] || '').trim() ? '<button class="btn" data-kick>Kick the can →</button>' : '') + '<button class="btn" data-x>Cancel</button><button class="btn primary" data-y>Save</button></div>', function (s) {
       function drawSel() {
         $('selRow').innerHTML = sel.length ? sel.map(function (x, i) {
           return '<button class="chip on" data-rm="' + i + '">' + (x.eaten ? '✓ ' : '') + esc(x.name) + (x.qty > 1 ? ' ×' + x.qty : '') + ' <span>✕</span></button>';
@@ -817,12 +947,52 @@ function pickMeal(dayIdx, slot) {
       };
       s.querySelector('[data-x]').onclick = closeSheet;
       s.querySelector('[data-clear]').onclick = function () { sel = []; drawSel(); };
+      var kb = s.querySelector('[data-kick]'); if (kb) kb.onclick = function () { kickCan(dayIdx, slot); };
       s.querySelector('[data-y]').onclick = function () {
         var extra = $('mealOther').value.trim();
         if (extra) sel.push({ name: extra.replace(/\s*\+\s*/g, ' & '), kind: 'meal', qty: 1 });
         closeSheet(); act('setMenu', dayIdx, slot, sel.map(itemRaw).join(' + '));
       };
       drawSel();
+    });
+}
+
+/* ---------- kick the can: the plan moves down the road to a later day ----------
+   Days are listed in order from the next day on (or from today, if the meal's own day has gone). A day that has already gone this week
+   stands for that day next week (the same tiles are reused), so its old meal can be replaced. */
+function kickCan(dayIdx, slot) {
+  var from = D.menu[dayIdx], what = String(from[slot] || '').trim();
+  var names = parseCell(what).map(function (x) { return x.name; }).join(' + ');
+  var ti = todayIdx(), order = [], start = dayIdx < ti ? ti : dayIdx + 1;
+  for (var k = 0; k < 7; k++) if ((start + k) % 7 !== dayIdx) order.push((start + k) % 7);
+  function when(i) { return i === ti ? 'today' : i < ti ? 'next week' : i === (ti + 1) % 7 ? 'tomorrow' : 'this week'; }
+  openSheet('<h2>Kick the can</h2><p class="sub">' + esc(names) + ' moves from ' + esc(from.day) + ' ' + slot + ' to…</p>' +
+    '<div class="kickdays">' + order.map(function (i) {
+      var d = D.menu[i], there = parseCell(d[slot]).map(function (x) { return x.name; }).join(' + ');
+      return '<button class="pick" data-to="' + i + '"><b>' + esc(d.day) + '</b> <span class="when">' + when(i) + '</span>' +
+        '<small>' + (there ? (i < ti ? 'last week: ' : '') + esc(there) : 'nothing planned') + '</small></button>';
+    }).join('') + '</div>' +
+    '<div class="acts"><button class="btn" data-x>Cancel</button></div>', function (s) {
+      s.querySelector('[data-x]').onclick = closeSheet;
+      s.querySelectorAll('[data-to]').forEach(function (b) { b.onclick = function () {
+        var to = +b.dataset.to, dest = D.menu[to], gone = to < ti;
+        var there = parseCell(dest[slot]).map(function (x) { return x.name; }).join(' + ');
+        function go(mode) {
+          closeSheet();
+          act('kickMenu', dayIdx, to, slot, what, mode).then(function () { toast(names + ' kicked to ' + dest.day + '.'); });
+        }
+        if (!there) { go('move'); return; }
+        openSheet('<h2>' + esc(dest.day) + (gone ? ' still has last week\'s ' : ' already has ') + esc(there) + '</h2>' +
+          '<p class="sub">' + (gone ? 'Replace it with ' + esc(names) + '?' : 'Swap the two days, put ' + esc(names) + ' alongside it, or replace it?') + '</p>' +
+          '<div class="acts"><button class="btn" data-x>Cancel</button>' +
+          (gone ? '' : '<button class="btn" data-join>Put it alongside</button><button class="btn" data-rep>Replace it</button>') +
+          '<button class="btn primary" data-' + (gone ? 'rep' : 'swap') + '>' + (gone ? 'Replace it' : 'Swap them') + '</button></div>', function (s2) {
+            s2.querySelector('[data-x]').onclick = closeSheet;
+            s2.querySelectorAll('[data-join]').forEach(function (z) { z.onclick = function () { go('join'); }; });
+            s2.querySelectorAll('[data-rep]').forEach(function (z) { z.onclick = function () { go('replace'); }; });
+            s2.querySelectorAll('[data-swap]').forEach(function (z) { z.onclick = function () { go('swap'); }; });
+          });
+      }; });
     });
 }
 
@@ -881,11 +1051,11 @@ function renderLeftoverCard() {
   var meals = parseCell(d && d.dinner).filter(function (x) { return x.kind === 'meal'; });
   if (!feat('stock') || !meals.length || /eating out|dining out|eat out/i.test(d.cook || '') || loAnswered()) { box.innerHTML = ''; return; }
   var names = meals.map(function (m) { return m.name; });
-  box.innerHTML = '<div class="locard"><div class="q">Anything left from last night?<small>' + esc(d.day) + '\'s dinner — tap how many portions went in the fridge.</small>' +
+  box.innerHTML = '<div class="locard"><div class="q">Anything left from last night?<small>' + esc(d.day) + '\'s dinner — tap how many portions are left.</small>' +
     meals.map(function (m, i) {
       return '<div class="lorow"><div class="stepper"><button data-lodn="' + i + '">−</button><div class="v" id="lo' + i + '">0</div><button data-loup="' + i + '">+</button></div>' + esc(m.name) + '</div>';
     }).join('') + '</div>' +
-    '<button class="btn" data-lono>Nothing left</button><button class="btn primary" data-loyes>Put in the fridge</button></div>';
+    '<div class="loacts"><button class="btn" data-lono>Nothing left</button><button class="btn" data-lofrz>Put in the freezer</button><button class="btn primary" data-loyes>Put in the fridge</button></div></div>';
   var counts = names.map(function () { return 0; });
   box.querySelectorAll('[data-loup]').forEach(function (b) { b.onclick = function () { var i = +b.dataset.loup; counts[i]++; $('lo' + i).textContent = counts[i]; }; });
   box.querySelectorAll('[data-lodn]').forEach(function (b) { b.onclick = function () { var i = +b.dataset.lodn; counts[i] = Math.max(0, counts[i] - 1); $('lo' + i).textContent = counts[i]; }; });
@@ -898,6 +1068,33 @@ function renderLeftoverCard() {
     todo.forEach(function (x) { p = p.then(function () { return act('addLeftover', x[0], x[1], ''); }); });
     p.then(function () { toast('In the fridge.'); });
   };
+  box.querySelector('[data-lofrz]').onclick = function () {
+    var todo = names.map(function (n, i) { return [n, counts[i]]; }).filter(function (x) { return x[1] > 0; });
+    if (!todo.length) { toast('Tap + for how many portions — or "Nothing left".'); return; }
+    freezeLeftovers(todo, loDone);
+  };
+}
+
+/* Leftovers straight into the freezer, skipping the fridge. list: [[name, portions], …] */
+function freezeLeftovers(list, onGo, note) {
+  var cats = D.freezer.categories.map(function (c) { return c.name; });
+  var defCat = cats.filter(function (c) { return /dinner|meal/i.test(c); })[0] || cats[0];
+  var f = FCODES[0];
+  var what = list.map(function (x) { return esc(x[0]) + ' ×' + qtyText(x[1]); }).join(', ');
+  openSheet('<h2>Into the freezer</h2><p class="sub">' + what + ' — portions, onto the freezer list, dated today.</p>' +
+    '<div class="lab">Which freezer</div><div class="chips">' + FCODES.map(function (c) { return '<button class="chip' + (c === f ? ' on' : '') + '" data-c="' + c + '">' + esc(fname(c)) + '</button>'; }).join('') + '</div>' +
+    '<div class="lab">Under which heading</div><select class="field" id="fCat">' + cats.map(function (c) { return '<option' + (c === defCat ? ' selected' : '') + '>' + esc(c) + '</option>'; }).join('') + '</select>' +
+    '<div class="acts"><button class="btn" data-x>Cancel</button><button class="btn primary" data-y>Freeze it</button></div>', function (s) {
+      s.querySelectorAll('[data-c]').forEach(function (b) { b.onclick = function () { f = b.dataset.c; s.querySelectorAll('[data-c]').forEach(function (z) { z.classList.toggle('on', z === b); }); }; });
+      s.querySelector('[data-x]').onclick = closeSheet;
+      s.querySelector('[data-y]').onclick = function () {
+        var cat = $('fCat').value; closeSheet();
+        if (onGo) onGo();
+        var p = Promise.resolve();
+        list.forEach(function (x) { p = p.then(function () { return act('addFreezer', cat, x[0], x[1], 'portions', f, 'leftovers' + (note ? ' — ' + note : '')); }); });
+        p.then(function () { toast('In the ' + fname(f).toLowerCase() + '.'); });
+      };
+    });
 }
 
 /* =========================================================
@@ -932,12 +1129,16 @@ function leftoverAdd() {
   (D.meals || []).forEach(function (m) { names[m.name] = 1; });
   D.menu.forEach(function (d) { parseCell(d.dinner).concat(parseCell(d.lunch)).forEach(function (x) { if (x.kind === 'meal') names[x.name] = 1; }); });
   var p = 2;
-  openSheet('<h2>Leftovers</h2><p class="sub">Into the fridge, dated today.</p>' +
+  openSheet('<h2>Leftovers</h2><p class="sub">Into the fridge or the freezer, dated today.</p>' +
     '<div class="lab">What is it</div><input class="field" id="lName" list="loNames" placeholder="e.g. Chilli">' +
     '<datalist id="loNames">' + Object.keys(names).sort().map(function (n) { return '<option>' + esc(n) + '</option>'; }).join('') + '</datalist>' +
     '<div class="lab">Portions</div><div class="stepper"><button data-dn>−</button><div class="v" id="lP">2</div><button data-up>+</button></div>' +
     '<div class="lab">Note</div><input class="field" id="lNote" placeholder="optional — e.g. no rice left">' +
-    '<div class="acts"><button class="btn" data-x>Cancel</button><button class="btn primary" data-y>Put it in</button></div>', function (s) {
+    '<div class="acts"><button class="btn" data-x>Cancel</button><button class="btn" data-frz>Freezer</button><button class="btn primary" data-y>Fridge</button></div>', function (s) {
+      s.querySelector('[data-frz]').onclick = function () {
+        var n = $('lName').value.trim(); if (!n) { toast('What\'s left over?'); return; }
+        freezeLeftovers([[n, p]], null, $('lNote').value.trim());
+      };
       s.querySelector('[data-dn]').onclick = function () { p = Math.max(1, p - 1); $('lP').textContent = p; };
       s.querySelector('[data-up]').onclick = function () { p++; $('lP').textContent = p; };
       s.querySelector('[data-x]').onclick = closeSheet;
@@ -1978,6 +2179,10 @@ document.addEventListener('click', function (e) {
     else timers = timers.filter(function (x) { return x.id !== id; });
     renderTimers(); return;
   }
+  var dy = t.closest('#week .day');
+  if (dy && !dy.classList.contains('front')) {
+    centerDay(Array.prototype.indexOf.call($('week').querySelectorAll('.day'), dy), true); return;
+  }
   var rl = t.closest('[data-recipe]');
   if (rl && !t.closest('#sheet') && !t.closest('.eat') && !t.closest('[data-cook]')) { e.stopPropagation(); showRecipe(rl.dataset.recipe); return; }
   var eb = t.closest('.eat'); if (eb) { eatItem(+eb.dataset.day, eb.dataset.slot, eb.dataset.eat); return; }
@@ -2016,14 +2221,15 @@ $('frzSearch').addEventListener('input', function () { if (D) renderFreezer(); }
 var lastDay = today();
 tick(); setInterval(function () {
   tick();
-  if (today() !== lastDay) { lastDay = today(); if (D) { applyOccasionLook(); if (!sheetOpen()) renderAll(); } }
+  if (today() !== lastDay) { lastDay = today(); state.carDay = null; if (D) { applyOccasionLook(); if (!sheetOpen()) renderAll(); } }
+  if (D && !sheetOpen() && state.carDay !== todayIdx() && Date.now() - (state.lastTouch || 0) > 3 * 60000) centerDay(todayIdx(), true);
 }, 10000);
 setInterval(timerLoop, 500);
 
 /* Keep in step with the sheet (someone may have added to the shopping list from their phone):
    every minute, unless someone is mid-tap. Recipes change less often, so hourly. */
 setInterval(function () {
-  if (state.busy || sheetOpen() || state.page === 'settings' || document.activeElement && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) return;
+  if (state.busy || sheetOpen() || drag || deckAnim || state.page === 'settings' || document.activeElement && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) return;
   refresh();
 }, 60000);
 setInterval(function () { if (D && feat('recipes')) loadRecipes(); }, 60 * 60000);
